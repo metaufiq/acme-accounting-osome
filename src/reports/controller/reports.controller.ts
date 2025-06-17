@@ -1,12 +1,12 @@
 import { Controller, Get, Post, HttpCode } from '@nestjs/common';
-import { ReportsService } from './reports.service';
+import { ReportsService } from '../service/reports.service';
 
 @Controller('api/v1/reports')
 export class ReportsController {
   constructor(private reportsService: ReportsService) {}
 
   @Get()
-  report() {
+  report(): Record<string, string> {
     return {
       'accounts.csv': this.reportsService.state('accounts'),
       'yearly.csv': this.reportsService.state('yearly'),
@@ -16,7 +16,7 @@ export class ReportsController {
 
   @Post()
   @HttpCode(201)
-  generate() {
+  generate(): { message: string } {
     this.reportsService.accounts();
     this.reportsService.yearly();
     this.reportsService.fs();
