@@ -233,5 +233,144 @@ describe('TicketsService', () => {
         expect(ticket.status).toBe(TicketStatus.open);
       });
     });
+
+    describe('strikeOff', () => {
+      it('creates strikeOff ticket with director', async () => {
+        const company = await Company.create({ name: 'test' });
+        const director = await User.create({
+          name: 'Director User',
+          role: UserRole.director,
+          companyId: company.id,
+        });
+
+        const ticket = await service.create({
+          companyId: company.id,
+          type: TicketType.strikeOff,
+        });
+
+        expect(ticket.category).toBe(TicketCategory.management);
+        expect(ticket.assigneeId).toBe(director.id);
+        expect(ticket.status).toBe(TicketStatus.open);
+      });
+
+      it('throws when no director exists', async () => {
+        const company = await Company.create({ name: 'test' });
+
+        await expect(
+          service.create({
+            companyId: company.id,
+            type: TicketType.strikeOff,
+          }),
+        ).rejects.toEqual(
+          new ConflictException(
+            'Cannot find user with role director to create a strikeOff ticket',
+          ),
+        );
+      });
+
+      it('throws when multiple directors exist', async () => {
+        const company = await Company.create({ name: 'test' });
+        await User.create({
+          name: 'Director 1',
+          role: UserRole.director,
+          companyId: company.id,
+        });
+        await User.create({
+          name: 'Director 2',
+          role: UserRole.director,
+          companyId: company.id,
+        });
+
+        await expect(
+          service.create({
+            companyId: company.id,
+            type: TicketType.strikeOff,
+          }),
+        ).rejects.toEqual(
+          new ConflictException(
+            'Multiple users with role director. Cannot create a strikeOff ticket',
+          ),
+        );
+      });
+
+      it('resolves all other active tickets when strikeOff is created', async () => {
+        const company = await Company.create({ name: 'test' });
+        const director = await User.create({
+          name: 'Director User',
+          role: UserRole.director,
+          companyId: company.id,
+        });
+        await User.create({
+          name: 'Accountant User',
+          role: UserRole.accountant,
+          companyId: company.id,
+        });
+
+        // Create some active tickets first
+        const managementTicket = await service.create({
+          companyId: company.id,
+          type: TicketType.managementReport,
+        });
+
+        // Verify the ticket was created as open
+        expect(managementTicket.status).toBe(TicketStatus.open);
+
+        // Now create strikeOff ticket
+        const strikeOffTicket = await service.create({
+          companyId: company.id,
+          type: TicketType.strikeOff,
+        });
+
+        expect(strikeOffTicket.category).toBe(TicketCategory.management);
+        expect(strikeOffTicket.assigneeId).toBe(director.id);
+        expect(strikeOffTicket.status).toBe(TicketStatus.open);
+
+        // Verify all previous tickets were resolved
+        const allTickets = await service.findAll();
+        const companyTickets = allTickets.filter(
+          (t) => t.companyId === company.id,
+        );
+
+        const managementTicketUpdated = companyTickets.find(
+          (t) => t.id === managementTicket.id,
+        );
+        const strikeOffTicketFromDb = companyTickets.find(
+          (t) => t.id === strikeOffTicket.id,
+        );
+
+        expect(managementTicketUpdated?.status).toBe(TicketStatus.resolved);
+        expect(strikeOffTicketFromDb?.status).toBe(TicketStatus.open);
+      });
+
+      it('does not affect tickets from other companies', async () => {
+        const company1 = await Company.create({ name: 'Company 1' });
+        const company2 = await Company.create({ name: 'Company 2' });
+
+        await User.create({
+          name: 'Director 1',
+          role: UserRole.director,
+          companyId: company1.id,
+        });
+        await User.create({
+          name: 'Accountant 2',
+          role: UserRole.accountant,
+          companyId: company2.id,
+        });
+        const company2Ticket = await service.create({
+          companyId: company2.id,
+          type: TicketType.managementReport,
+        });
+        await service.create({
+          companyId: company1.id,
+          type: TicketType.strikeOff,
+        });
+        const allTickets = await service.findAll();
+        const company2TicketUpdated = allTickets.find(
+          (t) => t.id === company2Ticket.id,
+        );
+
+        expect(company2TicketUpdated?.status).toBe(TicketStatus.open);
+      });
+    });
   });
 });

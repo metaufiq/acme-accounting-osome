@@ -2,24 +2,35 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ValidationPipe, BadRequestException } from '@nestjs/common';
 import { TicketsController } from './tickets.controller';
 import { TicketsService } from '@/tickets/service/tickets.service';
-import { DbModule } from '@/db.module';
 import { CreateTicketDto } from '@/tickets/dto/create-ticket.dto';
-import { TicketType } from '@db/models/Ticket';
-import { Company } from '@db/models/Company';
-import { User, UserRole } from '@db/models/User';
+import {
+  TicketType,
+  TicketStatus,
+  TicketCategory,
+  Ticket,
+} from '@db/models/Ticket';
 
 describe('TicketsController', () => {
   let controller: TicketsController;
+  let service: TicketsService;
   let validationPipe: ValidationPipe;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [TicketsController],
-      providers: [TicketsService],
-      imports: [DbModule],
+      providers: [
+        {
+          provide: TicketsService,
+          useValue: {
+            create: jest.fn(),
+            findAll: jest.fn(),
+          },
+        },
+      ],
     }).compile();
 
     controller = module.get<TicketsController>(TicketsController);
+    service = module.get<TicketsService>(TicketsService);
     validationPipe = new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
@@ -32,32 +43,53 @@ describe('TicketsController', () => {
   });
 
   describe('findAll', () => {
-    it('should return all tickets', async () => {
+    it('should call service.findAll and return result', async () => {
+      const mockTickets: Partial<Ticket>[] = [
+        {
+          id: 1,
+          type: TicketType.managementReport,
+          companyId: 123,
+          assigneeId: 456,
+          status: TicketStatus.open,
+          category: TicketCategory.accounting,
+        },
+      ];
+
+      const findAllSpy = jest
+        .spyOn(service, 'findAll')
+        .mockResolvedValue(mockTickets as Ticket[]);
+
       const result = await controller.findAll();
-      expect(Array.isArray(result)).toBe(true);
+
+      expect(findAllSpy).toHaveBeenCalledWith();
+      expect(result).toEqual(mockTickets);
     });
   });
 
   describe('create', () => {
-    it('should create a ticket with valid data', async () => {
-      const company = await Company.create({ name: 'Test Company' });
-      const user = await User.create({
-        name: 'Test User',
-        role: UserRole.accountant,
-        companyId: company.id,
-      });
-
+    it('should call service.create with correct parameters', async () => {
       const createTicketDto: CreateTicketDto = {
         type: TicketType.managementReport,
-        companyId: company.id,
+        companyId: 123,
       };
+
+      const mockResult = {
+        id: 1,
+        type: TicketType.managementReport,
+        companyId: 123,
+        assigneeId: 456,
+        status: TicketStatus.open,
+        category: TicketCategory.accounting,
+      };
+
+      const createSpy = jest
+        .spyOn(service, 'create')
+        .mockResolvedValue(mockResult);
 
       const result = await controller.create(createTicketDto);
 
-      expect(result).toBeDefined();
-      expect(result.type).toBe(TicketType.managementReport);
-      expect(result.companyId).toBe(company.id);
-      expect(result.assigneeId).toBe(user.id);
+      expect(createSpy).toHaveBeenCalledWith(createTicketDto);
+      expect(result).toEqual(mockResult);
     });
 
     it('should validate ticket type', async () => {
