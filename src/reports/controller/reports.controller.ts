@@ -17,9 +17,13 @@ export class ReportsController {
   @Post()
   @HttpCode(201)
   generate(): { message: string } {
-    this.reportsService.accounts();
-    this.reportsService.yearly();
-    this.reportsService.fs();
-    return { message: 'finished' };
+    setImmediate(() => {
+      void Promise.allSettled([
+        Promise.resolve(this.reportsService.accounts()),
+        Promise.resolve(this.reportsService.yearly()),
+        Promise.resolve(this.reportsService.fs()),
+      ]);
+    });
+    return { message: 'processing' };
   }
 }

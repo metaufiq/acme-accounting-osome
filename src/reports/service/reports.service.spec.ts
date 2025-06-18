@@ -8,9 +8,10 @@ const mockedFs = fs as jest.Mocked<typeof fs>;
 
 describe('ReportsService', () => {
   let service: ReportsService;
+  let module: TestingModule;
 
   beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
+    module = await Test.createTestingModule({
       providers: [ReportsService],
     }).compile();
 
@@ -18,6 +19,12 @@ describe('ReportsService', () => {
 
     // Reset all mocks
     jest.clearAllMocks();
+  });
+
+  afterAll(async () => {
+    if (module) {
+      await module.close();
+    }
   });
 
   it('should be defined', () => {
@@ -33,63 +40,87 @@ describe('ReportsService', () => {
   });
 
   describe('accounts', () => {
-    it('should update state to starting then finished', () => {
+    it('should process accounts and update state', () => {
       // Mock file system
       mockedFs.readdirSync.mockReturnValue(['test.csv'] as never);
       mockedFs.readFileSync.mockReturnValue('2023-01-01,Cash,,100,0\n');
       mockedFs.writeFileSync.mockImplementation(() => {});
 
+      // Call the method directly - now synchronous
       service.accounts();
 
-      expect(service.state('accounts')).toMatch(/finished in \d+\.\d+/);
+      expect(service.state('accounts')).toMatch(/finished in \d+\.\d+s/);
+      expect(mockedFs.writeFileSync).toHaveBeenCalledWith(
+        'out/accounts.csv',
+        expect.stringContaining('Account,Balance'),
+      );
     });
 
-    it('should handle errors by throwing File system error', () => {
+    it('should handle errors in processing', () => {
       mockedFs.readdirSync.mockImplementation(() => {
         throw new Error('File system error');
       });
 
-      expect(() => service.accounts()).toThrow('File system error');
+      // Call the method directly
+      service.accounts();
+
+      expect(service.state('accounts')).toBe('failed: File system error');
     });
   });
 
   describe('yearly', () => {
-    it('should update state to starting then finished', () => {
+    it('should process yearly reports and update state', () => {
       mockedFs.readdirSync.mockReturnValue(['test.csv'] as never);
       mockedFs.readFileSync.mockReturnValue('2023-01-01,Cash,,100,0\n');
       mockedFs.writeFileSync.mockImplementation(() => {});
 
+      // Call the method directly - now synchronous
       service.yearly();
 
-      expect(service.state('yearly')).toMatch(/finished in \d+\.\d+/);
+      expect(service.state('yearly')).toMatch(/finished in \d+\.\d+s/);
+      expect(mockedFs.writeFileSync).toHaveBeenCalledWith(
+        'out/yearly.csv',
+        expect.stringContaining('Financial Year,Cash Balance'),
+      );
     });
 
-    it('should handle errors by throwing File system error', () => {
+    it('should handle errors in processing', () => {
       mockedFs.readdirSync.mockImplementation(() => {
         throw new Error('File system error');
       });
 
-      expect(() => service.yearly()).toThrow('File system error');
+      // Call the method directly
+      service.yearly();
+
+      expect(service.state('yearly')).toBe('failed: File system error');
     });
   });
 
   describe('fs', () => {
-    it('should update state to starting then finished', () => {
+    it('should process financial statements and update state', () => {
       mockedFs.readdirSync.mockReturnValue(['test.csv'] as never);
       mockedFs.readFileSync.mockReturnValue('2023-01-01,Cash,,100,0\n');
       mockedFs.writeFileSync.mockImplementation(() => {});
 
+      // Call the method directly - now synchronous
       service.fs();
 
-      expect(service.state('fs')).toMatch(/finished in \d+\.\d+/);
+      expect(service.state('fs')).toMatch(/finished in \d+\.\d+s/);
+      expect(mockedFs.writeFileSync).toHaveBeenCalledWith(
+        'out/fs.csv',
+        expect.stringContaining('Basic Financial Statement'),
+      );
     });
 
-    it('should handle errors by throwing File system error', () => {
+    it('should handle errors in processing', () => {
       mockedFs.readdirSync.mockImplementation(() => {
         throw new Error('File system error');
       });
 
-      expect(() => service.fs()).toThrow('File system error');
+      // Call the method directly
+      service.fs();
+
+      expect(service.state('fs')).toBe('failed: File system error');
     });
   });
 });

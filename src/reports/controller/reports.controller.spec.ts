@@ -58,28 +58,45 @@ describe('ReportsController', () => {
   });
 
   describe('generate', () => {
-    it('should call all report generation methods and return success message', () => {
+    it('should return processing message and call report methods asynchronously', async () => {
       const accountsSpy = jest.spyOn(service, 'accounts');
       const yearlySpy = jest.spyOn(service, 'yearly');
       const fsSpy = jest.spyOn(service, 'fs');
 
       const result = controller.generate();
 
+      // Should return immediately with processing message
+      expect(result).toEqual({ message: 'processing' });
+
+      expect(accountsSpy).not.toHaveBeenCalled();
+      expect(yearlySpy).not.toHaveBeenCalled();
+      expect(fsSpy).not.toHaveBeenCalled();
+
+      // Wait for setImmediate to execute
+      await new Promise((resolve) => setImmediate(resolve));
+
+      // Now the methods should have been called
       expect(accountsSpy).toHaveBeenCalledWith();
       expect(yearlySpy).toHaveBeenCalledWith();
       expect(fsSpy).toHaveBeenCalledWith();
-      expect(result).toEqual({ message: 'finished' });
     });
 
-    it('should handle service errors gracefully', () => {
-      const accountsSpy = jest
-        .spyOn(service, 'accounts')
-        .mockImplementation(() => {
-          throw new Error('Service error');
-        });
+    it('should handle service errors without affecting the response', async () => {
+      const accountsSpy = jest.spyOn(service, 'accounts');
+      const yearlySpy = jest.spyOn(service, 'yearly');
+      const fsSpy = jest.spyOn(service, 'fs');
 
-      expect(() => controller.generate()).toThrow('Service error');
+      // Should not throw error - errors are handled in background
+      const result = controller.generate();
+      expect(result).toEqual({ message: 'processing' });
+
+      // Wait for background processing
+      await new Promise((resolve) => setImmediate(resolve));
+
+      // All methods should be called
       expect(accountsSpy).toHaveBeenCalled();
+      expect(yearlySpy).toHaveBeenCalled();
+      expect(fsSpy).toHaveBeenCalled();
     });
   });
 });
