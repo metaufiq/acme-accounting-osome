@@ -41,12 +41,11 @@ describe('ReportsService', () => {
 
   describe('accounts', () => {
     it('should process accounts and update state', () => {
-      // Mock file system
       mockedFs.readdirSync.mockReturnValue(['test.csv'] as never);
       mockedFs.readFileSync.mockReturnValue('2023-01-01,Cash,,100,0\n');
+      mockedFs.statSync.mockReturnValue({ mtimeMs: 123456789 } as never);
       mockedFs.writeFileSync.mockImplementation(() => {});
 
-      // Call the method directly - now synchronous
       service.accounts();
 
       expect(service.state('accounts')).toMatch(/finished in \d+\.\d+s/);
@@ -61,7 +60,6 @@ describe('ReportsService', () => {
         throw new Error('File system error');
       });
 
-      // Call the method directly
       service.accounts();
 
       expect(service.state('accounts')).toBe('failed: File system error');
@@ -72,9 +70,9 @@ describe('ReportsService', () => {
     it('should process yearly reports and update state', () => {
       mockedFs.readdirSync.mockReturnValue(['test.csv'] as never);
       mockedFs.readFileSync.mockReturnValue('2023-01-01,Cash,,100,0\n');
+      mockedFs.statSync.mockReturnValue({ mtimeMs: 123456789 } as never);
       mockedFs.writeFileSync.mockImplementation(() => {});
 
-      // Call the method directly - now synchronous
       service.yearly();
 
       expect(service.state('yearly')).toMatch(/finished in \d+\.\d+s/);
@@ -89,7 +87,6 @@ describe('ReportsService', () => {
         throw new Error('File system error');
       });
 
-      // Call the method directly
       service.yearly();
 
       expect(service.state('yearly')).toBe('failed: File system error');
@@ -100,9 +97,9 @@ describe('ReportsService', () => {
     it('should process financial statements and update state', () => {
       mockedFs.readdirSync.mockReturnValue(['test.csv'] as never);
       mockedFs.readFileSync.mockReturnValue('2023-01-01,Cash,,100,0\n');
+      mockedFs.statSync.mockReturnValue({ mtimeMs: 123456789 } as never);
       mockedFs.writeFileSync.mockImplementation(() => {});
 
-      // Call the method directly - now synchronous
       service.fs();
 
       expect(service.state('fs')).toMatch(/finished in \d+\.\d+s/);
@@ -117,7 +114,6 @@ describe('ReportsService', () => {
         throw new Error('File system error');
       });
 
-      // Call the method directly
       service.fs();
 
       expect(service.state('fs')).toBe('failed: File system error');

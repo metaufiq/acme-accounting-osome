@@ -3,6 +3,19 @@ import fs from 'fs';
 import path from 'path';
 import { performance } from 'perf_hooks';
 
+interface Transaction {
+  date: string;
+  account: string;
+  debit: number;
+  credit: number;
+}
+
+interface ProcessedData {
+  transactions: Transaction[];
+  timestamp: number;
+  fileStats: Map<string, number>;
+}
+
 @Injectable()
 export class ReportsService {
   private states = {
@@ -11,8 +24,75 @@ export class ReportsService {
     fs: 'idle',
   };
 
+  private cachedData: ProcessedData | null = null;
+
   state(scope: string): string {
     return this.states[scope as keyof typeof this.states];
+  }
+
+  private loadAndProcessCsvData(): Transaction[] {
+    const tmpDir = 'tmp';
+    const currentDataStats = new Map<string, number>();
+
+    // Check if we need to reload data
+    const csvFiles = fs
+      .readdirSync(tmpDir)
+      .filter((file) => file.endsWith('.csv'));
+
+    for (const file of csvFiles) {
+      const filePath = path.join(tmpDir, file);
+      const stats = fs.statSync(filePath);
+      currentDataStats.set(file, stats.mtimeMs);
+    }
+
+    // Check if cache is valid
+    if (this.cachedData && this.isCacheValid(currentDataStats)) {
+      return this.cachedData.transactions;
+    }
+
+    // Load and process all files
+    const transactions: Transaction[] = [];
+
+    // Process all files
+    for (const file of csvFiles) {
+      const filePath = path.join(tmpDir, file);
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const lines = content.trim().split('\n');
+
+      for (const line of lines) {
+        const [date, account, , debit, credit] = line.split(',');
+        transactions.push({
+          date: date || '',
+          account: account || '',
+          debit: parseFloat(String(debit || 0)),
+          credit: parseFloat(String(credit || 0)),
+        });
+      }
+    }
+
+    // Cache the processed data
+    this.cachedData = {
+      transactions,
+      timestamp: Date.now(),
+      fileStats: currentDataStats,
+    };
+
+    return transactions;
+  }
+
+  private isCacheValid(currentDataStats: Map<string, number>): boolean {
+    if (!this.cachedData) return false;
+
+    // Check if file count changed
+    if (currentDataStats.size !== this.cachedData.fileStats.size) return false;
+
+    // Check if any file was modified
+    for (const [filename, mtime] of currentDataStats) {
+      const cachedMtime = this.cachedData.fileStats.get(filename);
+      if (!cachedMtime || cachedMtime !== mtime) return false;
+    }
+
+    return true;
   }
 
   accounts(): void {
@@ -20,29 +100,21 @@ export class ReportsService {
     const start = performance.now();
 
     try {
-      const tmpDir = 'tmp';
+      const transactions = this.loadAndProcessCsvData();
       const outputFile = 'out/accounts.csv';
-      const accountBalances: Record<string, number> = {};
+      const accountBalances = new Map<string, number>();
 
-      const csvFiles = fs
-        .readdirSync(tmpDir)
-        .filter((file) => file.endsWith('.csv'));
-
-      for (const file of csvFiles) {
-        const content = fs.readFileSync(path.join(tmpDir, file), 'utf-8');
-        const lines = content.trim().split('\n');
-
-        for (const line of lines) {
-          const [, account, , debit, credit] = line.split(',');
-          accountBalances[account] =
-            (accountBalances[account] || 0) +
-            parseFloat(String(debit || 0)) -
-            parseFloat(String(credit || 0));
-        }
+      // Process transactions
+      for (const transaction of transactions) {
+        const balance = accountBalances.get(transaction.account) || 0;
+        accountBalances.set(
+          transaction.account,
+          balance + transaction.debit - transaction.credit,
+        );
       }
 
       const output = ['Account,Balance'];
-      for (const [account, balance] of Object.entries(accountBalances)) {
+      for (const [account, balance] of accountBalances) {
         output.push(`${account},${balance.toFixed(2)}`);
       }
       fs.writeFileSync(outputFile, output.join('\n'));
@@ -57,36 +129,32 @@ export class ReportsService {
     const start = performance.now();
 
     try {
-      const tmpDir = 'tmp';
+      const transactions = this.loadAndProcessCsvData();
       const outputFile = 'out/yearly.csv';
-      const cashByYear: Record<string, number> = {};
+      const cashByYear = new Map<number, number>();
 
-      const csvFiles = fs
-        .readdirSync(tmpDir)
-        .filter((file) => file.endsWith('.csv') && file !== 'yearly.csv');
-
-      for (const file of csvFiles) {
-        const content = fs.readFileSync(path.join(tmpDir, file), 'utf-8');
-        const lines = content.trim().split('\n');
-
-        for (const line of lines) {
-          const [date, account, , debit, credit] = line.split(',');
-          if (account === 'Cash') {
-            const year = new Date(date).getFullYear();
-            cashByYear[year] =
-              (cashByYear[year] || 0) +
-              parseFloat(String(debit || 0)) -
-              parseFloat(String(credit || 0));
+      // Process only Cash transactions
+      for (const transaction of transactions) {
+        if (transaction.account === 'Cash' && transaction.date) {
+          const year = new Date(transaction.date).getFullYear();
+          if (!isNaN(year)) {
+            const balance = cashByYear.get(year) || 0;
+            cashByYear.set(
+              year,
+              balance + transaction.debit - transaction.credit,
+            );
           }
         }
       }
 
       const output = ['Financial Year,Cash Balance'];
-      Object.keys(cashByYear)
-        .sort()
-        .forEach((year) => {
-          output.push(`${year},${cashByYear[year].toFixed(2)}`);
+      // Sort years and build output
+      Array.from(cashByYear.entries())
+        .sort(([a], [b]) => a - b)
+        .forEach(([year, balance]) => {
+          output.push(`${year},${balance.toFixed(2)}`);
         });
+
       fs.writeFileSync(outputFile, output.join('\n'));
       this.states.yearly = `finished in ${((performance.now() - start) / 1000).toFixed(2)}s`;
     } catch (error) {
@@ -99,7 +167,7 @@ export class ReportsService {
     const start = performance.now();
 
     try {
-      const tmpDir = 'tmp';
+      const transactions = this.loadAndProcessCsvData();
       const outputFile = 'out/fs.csv';
       const categories = {
         'Income Statement': {
@@ -132,29 +200,31 @@ export class ReportsService {
           Equity: ['Common Stock', 'Retained Earnings'],
         },
       };
-      const balances: Record<string, number> = {};
+
+      // Create a Set for faster account lookup
+      const relevantAccounts = new Set<string>();
       for (const section of Object.values(categories)) {
         for (const group of Object.values(section)) {
           for (const account of group) {
-            balances[account] = 0;
+            relevantAccounts.add(account);
           }
         }
       }
-      const csvFiles = fs
-        .readdirSync(tmpDir)
-        .filter((file) => file.endsWith('.csv') && file !== 'fs.csv');
 
-      for (const file of csvFiles) {
-        const content = fs.readFileSync(path.join(tmpDir, file), 'utf-8');
-        const lines = content.trim().split('\n');
+      const balances = new Map<string, number>();
+      // Initialize with 0 values
+      for (const account of relevantAccounts) {
+        balances.set(account, 0);
+      }
 
-        for (const line of lines) {
-          const [, account, , debit, credit] = line.split(',');
-
-          if (Object.prototype.hasOwnProperty.call(balances, account)) {
-            balances[account] +=
-              parseFloat(String(debit || 0)) - parseFloat(String(credit || 0));
-          }
+      // Process only relevant transactions
+      for (const transaction of transactions) {
+        if (relevantAccounts.has(transaction.account)) {
+          const balance = balances.get(transaction.account) || 0;
+          balances.set(
+            transaction.account,
+            balance + transaction.debit - transaction.credit,
+          );
         }
       }
 
@@ -165,12 +235,12 @@ export class ReportsService {
       let totalRevenue = 0;
       let totalExpenses = 0;
       for (const account of categories['Income Statement']['Revenues']) {
-        const value = balances[account] || 0;
+        const value = balances.get(account) || 0;
         output.push(`${account},${value.toFixed(2)}`);
         totalRevenue += value;
       }
       for (const account of categories['Income Statement']['Expenses']) {
-        const value = balances[account] || 0;
+        const value = balances.get(account) || 0;
         output.push(`${account},${value.toFixed(2)}`);
         totalExpenses += value;
       }
@@ -182,7 +252,7 @@ export class ReportsService {
       let totalEquity = 0;
       output.push('Assets');
       for (const account of categories['Balance Sheet']['Assets']) {
-        const value = balances[account] || 0;
+        const value = balances.get(account) || 0;
         output.push(`${account},${value.toFixed(2)}`);
         totalAssets += value;
       }
@@ -190,7 +260,7 @@ export class ReportsService {
       output.push('');
       output.push('Liabilities');
       for (const account of categories['Balance Sheet']['Liabilities']) {
-        const value = balances[account] || 0;
+        const value = balances.get(account) || 0;
         output.push(`${account},${value.toFixed(2)}`);
         totalLiabilities += value;
       }
@@ -198,7 +268,7 @@ export class ReportsService {
       output.push('');
       output.push('Equity');
       for (const account of categories['Balance Sheet']['Equity']) {
-        const value = balances[account] || 0;
+        const value = balances.get(account) || 0;
         output.push(`${account},${value.toFixed(2)}`);
         totalEquity += value;
       }
