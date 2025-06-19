@@ -8,6 +8,7 @@ interface Transaction {
   account: string;
   debit: number;
   credit: number;
+  sourceFile: string;
 }
 
 interface ProcessedData {
@@ -29,32 +30,50 @@ export class ReportsService {
     return this.states[scope as keyof typeof this.states];
   }
 
+  private filterTransactionsByExcludedFiles(
+    transactions: Transaction[],
+    excludeFiles?: string[],
+  ): Transaction[] {
+    if (!excludeFiles || excludeFiles.length === 0) {
+      return transactions;
+    }
+    return transactions.filter(
+      (transaction) => !excludeFiles.includes(transaction.sourceFile),
+    );
+  }
+
   private loadAndProcessCsvData(excludeFiles?: string[]): Transaction[] {
     const tmpDir = 'tmp';
     const currentDataStats = new Map<string, number>();
     let cacheValid = this.cachedData !== null;
 
-    // Check if we need to reload data
-    const csvFiles = fs
+    // Get ALL CSV files for caching purposes
+    const allCsvFiles = fs
       .readdirSync(tmpDir)
-      .filter(
-        (file) =>
-          file.endsWith('.csv') &&
-          (!excludeFiles || !excludeFiles.includes(file)),
-      );
+      .filter((file) => file.endsWith('.csv'));
 
-    // Check file count changed
-    if (cacheValid && csvFiles.length !== this.cachedData!.fileStats.size) {
-      cacheValid = false;
+    // Check if relevant file count changed (only non-excluded files matter)
+    if (cacheValid) {
+      const relevantFiles = allCsvFiles.filter(
+        (file) => !excludeFiles || !excludeFiles.includes(file),
+      );
+      const cachedRelevantFiles = Array.from(
+        this.cachedData!.fileStats.keys(),
+      ).filter((file) => !excludeFiles || !excludeFiles.includes(file));
+
+      if (relevantFiles.length !== cachedRelevantFiles.length) {
+        cacheValid = false;
+      }
     }
 
-    for (const file of csvFiles) {
+    // Check files for modifications
+    for (const file of allCsvFiles) {
       const filePath = path.join(tmpDir, file);
       const stats = fs.statSync(filePath);
       currentDataStats.set(file, stats.mtimeMs);
 
-      // Check if this file was modified while building the stats
-      if (cacheValid) {
+      // Only check modification time for non-excluded files
+      if (cacheValid && (!excludeFiles || !excludeFiles.includes(file))) {
         const cachedMtime = this.cachedData!.fileStats.get(file);
         if (!cachedMtime || cachedMtime !== stats.mtimeMs) {
           cacheValid = false;
@@ -64,14 +83,17 @@ export class ReportsService {
 
     // Return cached data if still valid
     if (this.cachedData && cacheValid) {
-      return this.cachedData.transactions;
+      return this.filterTransactionsByExcludedFiles(
+        this.cachedData.transactions,
+        excludeFiles,
+      );
     }
 
-    // Load and process all files
+    // Load and process ALL files (not just filtered ones for caching)
     const transactions: Transaction[] = [];
 
-    // Process all files
-    for (const file of csvFiles) {
+    // Process all files and track source file
+    for (const file of allCsvFiles) {
       const filePath = path.join(tmpDir, file);
       const content = fs.readFileSync(filePath, 'utf-8');
       const lines = content.trim().split('\n');
@@ -83,17 +105,18 @@ export class ReportsService {
           account: account || '',
           debit: parseFloat(String(debit || 0)),
           credit: parseFloat(String(credit || 0)),
+          sourceFile: file,
         });
       }
     }
 
-    // Cache the processed data
+    // Cache ALL processed data with ALL file stats
     this.cachedData = {
       transactions,
       fileStats: currentDataStats,
     };
 
-    return transactions;
+    return this.filterTransactionsByExcludedFiles(transactions, excludeFiles);
   }
 
   accounts(): void {

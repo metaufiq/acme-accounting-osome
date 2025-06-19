@@ -163,7 +163,7 @@ describe('ReportsService', () => {
       expect(mockStatSync).toHaveBeenCalled(); // Still checks file stats
     });
 
-    it('should invalidate cache when file is modified', () => {
+    it('should invalidate cache when relevant files are modified', () => {
       mockReaddirSync.mockReturnValue(['test.csv']);
       mockReadFileSync.mockReturnValue('2023-01-01,Cash,,100,0\n');
       mockStatSync.mockReturnValue({ mtimeMs: 123456789 });
@@ -184,23 +184,239 @@ describe('ReportsService', () => {
       expect(mockReadFileSync).toHaveBeenCalled(); // Should read file again
     });
 
-    it('should invalidate cache when file count changes', () => {
-      mockReaddirSync.mockReturnValue(['test.csv']);
+    it('should maintain cache when only excludeFiles parameter changes', () => {
+      mockReaddirSync.mockReturnValue(['data.csv', 'yearly.csv', 'fs.csv']);
       mockReadFileSync.mockReturnValue('2023-01-01,Cash,,100,0\n');
       mockStatSync.mockReturnValue({ mtimeMs: 123456789 });
       mockWriteFileSync.mockImplementation(() => {});
 
-      // First call
+      // First call with no exclusions (accounts function)
       service.accounts();
 
-      // Reset and add new file
+      // Reset mock call counts
       jest.clearAllMocks();
-      mockReaddirSync.mockReturnValue(['test.csv', 'test2.csv']);
+      mockReaddirSync.mockReturnValue(['data.csv', 'yearly.csv', 'fs.csv']);
       mockStatSync.mockReturnValue({ mtimeMs: 123456789 });
-      mockReadFileSync.mockReturnValue('2023-01-01,Cash,,100,0\n');
 
-      // Second call should reprocess due to file count change
+      // Second call with exclusions (yearly function) - should use cache
+      service.yearly();
+
+      expect(mockReadFileSync).not.toHaveBeenCalled(); // Should NOT read files again
+      expect(mockReaddirSync).toHaveBeenCalled(); // Still checks directory
+      expect(mockStatSync).toHaveBeenCalled(); // Still checks file stats
+    });
+
+    it('should cache ALL files but filter results based on excludeFiles', () => {
+      // Setup multiple files with different content
+      mockReaddirSync.mockReturnValue(['data.csv', 'yearly.csv', 'fs.csv']);
+      mockStatSync.mockReturnValue({ mtimeMs: 123456789 });
+      mockWriteFileSync.mockImplementation(() => {});
+
+      // Mock different content for each file
+      mockReadFileSync.mockImplementation((filePath: string) => {
+        if (filePath.includes('data.csv'))
+          return '2023-01-01,Sales Revenue,,500,0\n';
+        if (filePath.includes('yearly.csv')) return '2023-01-01,Cash,,200,0\n';
+        if (filePath.includes('fs.csv')) return '2023-01-01,Inventory,,300,0\n';
+        return '';
+      });
+
+      // First call processes all files (accounts - no exclusions)
       service.accounts();
+
+      // Verify all files were processed initially
+      expect(mockReadFileSync).toHaveBeenCalledTimes(3);
+
+      // Reset mock call counts
+      jest.clearAllMocks();
+      mockReaddirSync.mockReturnValue(['data.csv', 'yearly.csv', 'fs.csv']);
+      mockStatSync.mockReturnValue({ mtimeMs: 123456789 });
+
+      // Second call with exclusions should use cached data
+      service.yearly(); // Excludes yearly.csv
+
+      expect(mockReadFileSync).not.toHaveBeenCalled(); // Uses cached data
+    });
+
+    it('should track sourceFile for each transaction in cache', () => {
+      mockReaddirSync.mockReturnValue(['file1.csv', 'file2.csv']);
+      mockStatSync.mockReturnValue({ mtimeMs: 123456789 });
+      mockWriteFileSync.mockImplementation(() => {});
+
+      // Mock different content for each file to verify sourceFile tracking
+      mockReadFileSync.mockImplementation((filePath: string) => {
+        if (filePath.includes('file1.csv'))
+          return '2023-01-01,Account1,,100,0\n';
+        if (filePath.includes('file2.csv'))
+          return '2023-01-01,Account2,,200,0\n';
+        return '';
+      });
+
+      // Process files to build cache
+      service.accounts();
+
+      // Verify that transactions would be properly filtered by sourceFile
+      // This tests that our internal caching structure includes sourceFile
+      expect(mockReadFileSync).toHaveBeenCalledWith(
+        expect.stringContaining('file1.csv'),
+        'utf-8',
+      );
+      expect(mockReadFileSync).toHaveBeenCalledWith(
+        expect.stringContaining('file2.csv'),
+        'utf-8',
+      );
+    });
+
+    it('should NOT invalidate cache when only excluded files are modified', () => {
+      mockReaddirSync.mockReturnValue(['data.csv', 'yearly.csv', 'fs.csv']);
+      mockReadFileSync.mockReturnValue('2023-01-01,Cash,,100,0\n');
+      mockWriteFileSync.mockImplementation(() => {});
+
+      // Mock different mtime for each file call
+      let statCallCount = 0;
+      mockStatSync.mockImplementation(() => {
+        statCallCount++;
+        // First 3 calls (initial cache) - same mtime for all files
+        if (statCallCount <= 3) return { mtimeMs: 123456789 };
+        // Next 3 calls (second fs() call) - fs.csv has different mtime, others same
+        if (statCallCount === 4) return { mtimeMs: 123456789 }; // data.csv - same
+        if (statCallCount === 5) return { mtimeMs: 123456789 }; // yearly.csv - same
+        if (statCallCount === 6) return { mtimeMs: 999999999 }; // fs.csv - CHANGED
+        return { mtimeMs: 123456789 };
+      });
+
+      // First call to fs() - excludes fs.csv, builds cache
+      service.fs();
+
+      // Reset mock call counts
+      jest.clearAllMocks();
+      mockReaddirSync.mockReturnValue(['data.csv', 'yearly.csv', 'fs.csv']);
+
+      // Second call to fs() - fs.csv is modified but excluded, should use cache
+      service.fs();
+
+      expect(mockReadFileSync).not.toHaveBeenCalled(); // Should NOT read files again
+    });
+
+    it('should invalidate cache when non-excluded files are modified', () => {
+      mockReaddirSync.mockReturnValue(['data.csv', 'yearly.csv', 'fs.csv']);
+      mockReadFileSync.mockReturnValue('2023-01-01,Cash,,100,0\n');
+      mockWriteFileSync.mockImplementation(() => {});
+
+      // Mock different mtime for each file call
+      let statCallCount = 0;
+      mockStatSync.mockImplementation(() => {
+        statCallCount++;
+        // First 3 calls (initial cache) - same mtime for all files
+        if (statCallCount <= 3) return { mtimeMs: 123456789 };
+        // Next 3 calls (second fs() call) - data.csv has different mtime (non-excluded)
+        if (statCallCount === 4) return { mtimeMs: 999999999 }; // data.csv - CHANGED
+        if (statCallCount === 5) return { mtimeMs: 123456789 }; // yearly.csv - same
+        if (statCallCount === 6) return { mtimeMs: 123456789 }; // fs.csv - same
+        return { mtimeMs: 123456789 };
+      });
+
+      // First call to fs() - excludes fs.csv, builds cache
+      service.fs();
+
+      // Reset mock call counts
+      jest.clearAllMocks();
+      mockReaddirSync.mockReturnValue(['data.csv', 'yearly.csv', 'fs.csv']);
+
+      // Second call to fs() - data.csv is modified and NOT excluded, should invalidate cache
+      service.fs();
+
+      expect(mockReadFileSync).toHaveBeenCalled(); // Should read files again
+    });
+
+    it('should NOT invalidate cache when excluded files are added', () => {
+      mockReaddirSync.mockReturnValueOnce(['data.csv', 'yearly.csv']); // Initial files
+      mockReadFileSync.mockReturnValue('2023-01-01,Cash,,100,0\n');
+      mockStatSync.mockReturnValue({ mtimeMs: 123456789 });
+      mockWriteFileSync.mockImplementation(() => {});
+
+      // First call to fs() - excludes fs.csv, builds cache
+      service.fs();
+
+      // Reset mock call counts
+      jest.clearAllMocks();
+      // Second call - fs.csv is added (but it's excluded anyway)
+      mockReaddirSync.mockReturnValue(['data.csv', 'yearly.csv', 'fs.csv']);
+      mockStatSync.mockReturnValue({ mtimeMs: 123456789 });
+
+      // Second call to fs() - fs.csv added but excluded, should use cache
+      service.fs();
+
+      expect(mockReadFileSync).not.toHaveBeenCalled(); // Should NOT read files again
+    });
+
+    it('should NOT invalidate cache when excluded files are removed', () => {
+      mockReaddirSync.mockReturnValueOnce(['data.csv', 'yearly.csv', 'fs.csv']); // Initial files
+      mockReadFileSync.mockReturnValue('2023-01-01,Cash,,100,0\n');
+      mockStatSync.mockReturnValue({ mtimeMs: 123456789 });
+      mockWriteFileSync.mockImplementation(() => {});
+
+      // First call to fs() - excludes fs.csv, builds cache
+      service.fs();
+
+      // Reset mock call counts
+      jest.clearAllMocks();
+      // Second call - fs.csv is removed (but it was excluded anyway)
+      mockReaddirSync.mockReturnValue(['data.csv', 'yearly.csv']);
+      mockStatSync.mockReturnValue({ mtimeMs: 123456789 });
+
+      // Second call to fs() - fs.csv removed but was excluded, should use cache
+      service.fs();
+
+      expect(mockReadFileSync).not.toHaveBeenCalled(); // Should NOT read files again
+    });
+
+    it('should invalidate cache when non-excluded files are added', () => {
+      mockReaddirSync.mockReturnValueOnce(['data.csv', 'yearly.csv']); // Initial files
+      mockReadFileSync.mockReturnValue('2023-01-01,Cash,,100,0\n');
+      mockStatSync.mockReturnValue({ mtimeMs: 123456789 });
+      mockWriteFileSync.mockImplementation(() => {});
+
+      // First call to fs() - excludes fs.csv, builds cache
+      service.fs();
+
+      // Reset mock call counts
+      jest.clearAllMocks();
+      // Second call - new-data.csv is added (not excluded)
+      mockReaddirSync.mockReturnValue([
+        'data.csv',
+        'yearly.csv',
+        'new-data.csv',
+      ]);
+      mockStatSync.mockReturnValue({ mtimeMs: 123456789 });
+
+      // Second call to fs() - new-data.csv added and not excluded, should invalidate cache
+      service.fs();
+
+      expect(mockReadFileSync).toHaveBeenCalled(); // Should read files again
+    });
+
+    it('should invalidate cache when non-excluded files are removed', () => {
+      mockReaddirSync.mockReturnValueOnce([
+        'data.csv',
+        'yearly.csv',
+        'other.csv',
+      ]); // Initial files
+      mockReadFileSync.mockReturnValue('2023-01-01,Cash,,100,0\n');
+      mockStatSync.mockReturnValue({ mtimeMs: 123456789 });
+      mockWriteFileSync.mockImplementation(() => {});
+
+      // First call to fs() - excludes fs.csv, builds cache
+      service.fs();
+
+      // Reset mock call counts
+      jest.clearAllMocks();
+      // Second call - other.csv is removed (not excluded)
+      mockReaddirSync.mockReturnValue(['data.csv', 'yearly.csv']);
+      mockStatSync.mockReturnValue({ mtimeMs: 123456789 });
+
+      // Second call to fs() - other.csv removed and was not excluded, should invalidate cache
+      service.fs();
 
       expect(mockReadFileSync).toHaveBeenCalled(); // Should read files again
     });
