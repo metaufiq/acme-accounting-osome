@@ -12,7 +12,6 @@ interface Transaction {
 
 interface ProcessedData {
   transactions: Transaction[];
-  timestamp: number;
   fileStats: Map<string, number>;
 }
 
@@ -30,7 +29,7 @@ export class ReportsService {
     return this.states[scope as keyof typeof this.states];
   }
 
-  private loadAndProcessCsvData(): Transaction[] {
+  private loadAndProcessCsvData(excludeFiles?: string[]): Transaction[] {
     const tmpDir = 'tmp';
     const currentDataStats = new Map<string, number>();
     let cacheValid = this.cachedData !== null;
@@ -38,7 +37,11 @@ export class ReportsService {
     // Check if we need to reload data
     const csvFiles = fs
       .readdirSync(tmpDir)
-      .filter((file) => file.endsWith('.csv'));
+      .filter(
+        (file) =>
+          file.endsWith('.csv') &&
+          (!excludeFiles || !excludeFiles.includes(file)),
+      );
 
     // Check file count changed
     if (cacheValid && csvFiles.length !== this.cachedData!.fileStats.size) {
@@ -87,7 +90,6 @@ export class ReportsService {
     // Cache the processed data
     this.cachedData = {
       transactions,
-      timestamp: Date.now(),
       fileStats: currentDataStats,
     };
 
@@ -128,7 +130,7 @@ export class ReportsService {
     const start = performance.now();
 
     try {
-      const transactions = this.loadAndProcessCsvData();
+      const transactions = this.loadAndProcessCsvData(['yearly.csv']);
       const outputFile = 'out/yearly.csv';
       const cashByYear = new Map<number, number>();
 
@@ -166,7 +168,7 @@ export class ReportsService {
     const start = performance.now();
 
     try {
-      const transactions = this.loadAndProcessCsvData();
+      const transactions = this.loadAndProcessCsvData(['fs.csv']);
       const outputFile = 'out/fs.csv';
       const categories = {
         'Income Statement': {
