@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ReportsService } from './reports.service';
 import fs from 'fs';
+
+import { ReportsService } from './reports.service';
 
 // Mock fs module
 jest.mock('fs');

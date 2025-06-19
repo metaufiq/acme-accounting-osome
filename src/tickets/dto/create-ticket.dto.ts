@@ -1,5 +1,6 @@
 import { IsEnum, IsNumber, IsPositive } from 'class-validator';
-import { TicketType } from '../../../db/models/Ticket';
+
+import { TicketType } from '@db/models/Ticket';
 
 export class CreateTicketDto {
   @IsEnum(TicketType, {

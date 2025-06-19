@@ -1,4 +1,5 @@
 import { ConflictException } from '@nestjs/common';
+
 import { UserRole } from '@db/models/User';
 
 export class UserNotFoundError extends ConflictException {

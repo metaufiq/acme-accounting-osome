@@ -6,6 +6,7 @@ import {
   PrimaryKey,
   AutoIncrement,
 } from 'sequelize-typescript';
+
 import { User } from './User';
 
 interface CompanyCreateProperties {

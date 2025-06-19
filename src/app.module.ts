@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+
 import { DbModule } from '@/db.module';
 import { TicketsModule } from '@/tickets/tickets.module';
 import { ReportsModule } from '@/reports/reports.module';

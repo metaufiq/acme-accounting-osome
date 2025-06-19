@@ -4,11 +4,11 @@ import { Company } from '@db/models/Company';
 import { TicketCategory, TicketStatus, TicketType } from '@db/models/Ticket';
 import { User, UserRole } from '@db/models/User';
 import { DbModule } from '@/db.module';
-import { TicketsService } from './tickets.service';
 import {
   UserNotFoundError,
   MultipleUsersError,
-} from '@/tickets/exceptions/user-role.exception';
+} from '../exceptions/user-role.exception';
+import { TicketsService } from './tickets.service';
 
 describe('TicketsService', () => {
   let service: TicketsService;

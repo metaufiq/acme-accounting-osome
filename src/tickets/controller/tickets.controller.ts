@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
-import { TicketsService } from '@/tickets/service/tickets.service';
-import { CreateTicketDto } from '@/tickets/dto/create-ticket.dto';
+
+import { TicketsService } from '../service/tickets.service';
+import { CreateTicketDto } from '../dto/create-ticket.dto';
 
 @Controller('api/v1/tickets')
 export class TicketsController {

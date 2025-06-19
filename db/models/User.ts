@@ -7,6 +7,7 @@ import {
   PrimaryKey,
   AutoIncrement,
 } from 'sequelize-typescript';
+
 import { Company } from './Company';
 
 export enum UserRole {

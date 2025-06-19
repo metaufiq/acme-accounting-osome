@@ -1,14 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ValidationPipe, BadRequestException } from '@nestjs/common';
-import { TicketsController } from './tickets.controller';
-import { TicketsService } from '@/tickets/service/tickets.service';
-import { CreateTicketDto } from '@/tickets/dto/create-ticket.dto';
 import {
   TicketType,
   TicketStatus,
   TicketCategory,
   Ticket,
 } from '@db/models/Ticket';
+import { TicketsService } from '../service/tickets.service';
+import { CreateTicketDto } from '../dto/create-ticket.dto';
+import { TicketsController } from './tickets.controller';
 
 describe('TicketsController', () => {
   let controller: TicketsController;
