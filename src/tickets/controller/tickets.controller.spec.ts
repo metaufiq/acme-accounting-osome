@@ -106,6 +106,28 @@ describe('TicketsController', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it('should accept all valid ticket types', async () => {
+      const validTypes = [
+        TicketType.managementReport,
+        TicketType.registrationAddressChange,
+        TicketType.strikeOff,
+      ];
+
+      for (const ticketType of validTypes) {
+        const validDto = {
+          type: ticketType,
+          companyId: 1,
+        };
+
+        const result = (await validationPipe.transform(validDto, {
+          type: 'body',
+          metatype: CreateTicketDto,
+        })) as CreateTicketDto;
+
+        expect(result.type).toBe(ticketType);
+      }
+    });
+
     it('should validate companyId is a number', async () => {
       const invalidDto = {
         type: TicketType.managementReport,

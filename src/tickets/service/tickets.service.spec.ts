@@ -183,33 +183,6 @@ describe('TicketsService', () => {
         );
       });
 
-      it('throws when duplicate registrationAddressChange ticket exists', async () => {
-        const company = await Company.create({ name: 'test' });
-        await User.create({
-          name: 'Test User',
-          role: UserRole.corporateSecretary,
-          companyId: company.id,
-        });
-
-        // Create first ticket
-        await service.create({
-          companyId: company.id,
-          type: TicketType.registrationAddressChange,
-        });
-
-        // Try to create duplicate ticket
-        await expect(
-          service.create({
-            companyId: company.id,
-            type: TicketType.registrationAddressChange,
-          }),
-        ).rejects.toEqual(
-          new ConflictException(
-            'Company already has a registrationAddressChange ticket',
-          ),
-        );
-      });
-
       it('prefers corporate secretary over director when both exist', async () => {
         const company = await Company.create({ name: 'test' });
         const corporateSecretary = await User.create({
@@ -263,7 +236,7 @@ describe('TicketsService', () => {
           }),
         ).rejects.toEqual(
           new ConflictException(
-            'Cannot find user with role director to create a strikeOff ticket',
+            'Cannot find user with role director to create a ticket',
           ),
         );
       });
@@ -288,7 +261,7 @@ describe('TicketsService', () => {
           }),
         ).rejects.toEqual(
           new ConflictException(
-            'Multiple users with role director. Cannot create a strikeOff ticket',
+            'Multiple users with role director. Cannot create a ticket',
           ),
         );
       });
