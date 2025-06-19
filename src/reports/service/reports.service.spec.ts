@@ -430,36 +430,63 @@ describe('ReportsService', () => {
     });
 
     it('should process all CSV files for accounts', () => {
-      mockReaddirSync.mockReturnValue([
-        'data.csv',
-        'yearly.csv',
-        'fs.csv',
-        'accounts.csv',
-        'other.txt',
-      ]);
+      const csvFileNames = ['data.csv', 'yearly.csv', 'fs.csv', 'accounts.csv'];
+      const fileNames = [...csvFileNames, 'other.txt'];
+
+      mockReaddirSync.mockReturnValue(fileNames);
 
       service.accounts();
 
       // Should process only CSV files, no exclusions for accounts
-      expect(mockReadFileSync).toHaveBeenCalledTimes(4); // All CSV files
+      expect(mockReadFileSync).toHaveBeenCalledTimes(csvFileNames.length); // All CSV files
     });
 
     it('should exclude yearly.csv when processing yearly report', () => {
-      mockReaddirSync.mockReturnValue(['data.csv', 'yearly.csv', 'fs.csv']);
+      const fileNames = ['data.csv', 'yearly.csv', 'fs.csv'];
+      mockReaddirSync.mockReturnValue(fileNames);
+
+      // Mock different content for each file to verify exclusion
+      mockReadFileSync.mockImplementation((filePath: string) => {
+        if (filePath.includes('data.csv')) return '2023-01-01,Cash,,100,0\n';
+        if (filePath.includes('yearly.csv')) return '2023-01-01,Cash,,200,0\n'; // This should be excluded
+        if (filePath.includes('fs.csv')) return '2023-01-01,Cash,,300,0\n';
+        return '';
+      });
 
       service.yearly();
 
-      // Should process only data.csv and fs.csv (excluding yearly.csv)
-      expect(mockReadFileSync).toHaveBeenCalledTimes(2);
+      // Verify the final output doesn't contain data from yearly.csv
+      // If yearly.csv was included, Cash balance would be 600 (100+200+300)
+      // If yearly.csv is excluded (correct), Cash balance should be 400 (100+300)
+      expect(mockWriteFileSync).toHaveBeenCalledWith(
+        'out/yearly.csv',
+        expect.stringMatching(/2023,400\.00/), // Should be 400, not 600
+      );
     });
 
     it('should exclude fs.csv when processing financial statements', () => {
-      mockReaddirSync.mockReturnValue(['data.csv', 'yearly.csv', 'fs.csv']);
+      const fileNames = ['data.csv', 'yearly.csv', 'fs.csv'];
+      mockReaddirSync.mockReturnValue(fileNames);
+
+      // Mock different content for each file to verify exclusion
+      mockReadFileSync.mockImplementation((filePath: string) => {
+        if (filePath.includes('data.csv')) return '2023-01-01,Cash,,100,0\n';
+        if (filePath.includes('yearly.csv'))
+          return '2023-01-01,Sales Revenue,,200,0\n';
+        if (filePath.includes('fs.csv')) return '2023-01-01,Cash,,300,0\n'; // This should be excluded
+        return '';
+      });
 
       service.fs();
 
-      // Should process only data.csv and yearly.csv (excluding fs.csv)
-      expect(mockReadFileSync).toHaveBeenCalledTimes(2);
+      // Verify the final output doesn't contain data from fs.csv
+      // The fs output should contain Cash: 100, Sales Revenue: 200
+      // If fs.csv was included, Cash would be 400 (100+300)
+      // If fs.csv is excluded (correct), Cash should be 100
+      expect(mockWriteFileSync).toHaveBeenCalledWith(
+        'out/fs.csv',
+        expect.stringMatching(/Cash,100\.00/), // Should be 100, not 400
+      );
     });
   });
 });
