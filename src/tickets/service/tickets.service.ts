@@ -1,4 +1,5 @@
 import { ConflictException, Injectable } from '@nestjs/common';
+
 import { Company } from '@db/models/Company';
 import {
   Ticket,
@@ -8,6 +9,10 @@ import {
 } from '@db/models/Ticket';
 import { User, UserRole } from '@db/models/User';
 import { CreateTicketDto } from '@/tickets/dto/create-ticket.dto';
+import {
+  UserNotFoundError,
+  MultipleUsersError,
+} from '@/tickets/exceptions/user-role.exception';
 
 export interface TicketDto {
   id: number;
@@ -26,18 +31,6 @@ interface TicketTypeHandler {
 
 @Injectable()
 export class TicketsService {
-  private throwUserNotFoundError(roles: UserRole[]): never {
-    throw new ConflictException(
-      `Cannot find user with role ${roles.join(' or ')} to create a ticket`,
-    );
-  }
-
-  private throwMultipleUsersError(role: UserRole): never {
-    throw new ConflictException(
-      `Multiple users with role ${role}. Cannot create a ticket`,
-    );
-  }
-
   async findAll(): Promise<Ticket[]> {
     return await Ticket.findAll({ include: [Company, User] });
   }
@@ -110,7 +103,7 @@ export class TicketsService {
     });
 
     if (corporateSecretaries.length > 1) {
-      this.throwMultipleUsersError(UserRole.corporateSecretary);
+      throw new MultipleUsersError(UserRole.corporateSecretary);
     }
 
     if (corporateSecretaries.length === 1) {
@@ -124,14 +117,14 @@ export class TicketsService {
     });
 
     if (directors.length === 0) {
-      this.throwUserNotFoundError([
+      throw new UserNotFoundError([
         UserRole.corporateSecretary,
         UserRole.director,
       ]);
     }
 
     if (directors.length > 1) {
-      this.throwMultipleUsersError(UserRole.director);
+      throw new MultipleUsersError(UserRole.director);
     }
 
     return directors[0];
@@ -144,7 +137,7 @@ export class TicketsService {
     });
 
     if (!assignees.length) {
-      this.throwUserNotFoundError([UserRole.accountant]);
+      throw new UserNotFoundError([UserRole.accountant]);
     }
 
     return assignees[0];
@@ -157,11 +150,11 @@ export class TicketsService {
     });
 
     if (directors.length === 0) {
-      this.throwUserNotFoundError([UserRole.director]);
+      throw new UserNotFoundError([UserRole.director]);
     }
 
     if (directors.length > 1) {
-      this.throwMultipleUsersError(UserRole.director);
+      throw new MultipleUsersError(UserRole.director);
     }
 
     return directors[0];

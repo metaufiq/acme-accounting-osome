@@ -1,10 +1,14 @@
-import { ConflictException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+
 import { Company } from '@db/models/Company';
 import { TicketCategory, TicketStatus, TicketType } from '@db/models/Ticket';
 import { User, UserRole } from '@db/models/User';
 import { DbModule } from '@/db.module';
 import { TicketsService } from './tickets.service';
+import {
+  UserNotFoundError,
+  MultipleUsersError,
+} from '@/tickets/exceptions/user-role.exception';
 
 describe('TicketsService', () => {
   let service: TicketsService;
@@ -73,11 +77,7 @@ describe('TicketsService', () => {
             companyId: company.id,
             type: TicketType.managementReport,
           }),
-        ).rejects.toEqual(
-          new ConflictException(
-            `Cannot find user with role accountant to create a ticket`,
-          ),
-        );
+        ).rejects.toEqual(new UserNotFoundError([UserRole.accountant]));
       });
     });
 
@@ -118,11 +118,7 @@ describe('TicketsService', () => {
             companyId: company.id,
             type: TicketType.registrationAddressChange,
           }),
-        ).rejects.toEqual(
-          new ConflictException(
-            `Multiple users with role corporateSecretary. Cannot create a ticket`,
-          ),
-        );
+        ).rejects.toEqual(new MultipleUsersError(UserRole.corporateSecretary));
       });
 
       it('if there is no secretary, throw', async () => {
@@ -134,9 +130,10 @@ describe('TicketsService', () => {
             type: TicketType.registrationAddressChange,
           }),
         ).rejects.toEqual(
-          new ConflictException(
-            `Cannot find user with role corporateSecretary or director to create a ticket`,
-          ),
+          new UserNotFoundError([
+            UserRole.corporateSecretary,
+            UserRole.director,
+          ]),
         );
       });
 
@@ -176,11 +173,7 @@ describe('TicketsService', () => {
             companyId: company.id,
             type: TicketType.registrationAddressChange,
           }),
-        ).rejects.toEqual(
-          new ConflictException(
-            'Multiple users with role director. Cannot create a ticket',
-          ),
-        );
+        ).rejects.toEqual(new MultipleUsersError(UserRole.director));
       });
 
       it('prefers corporate secretary over director when both exist', async () => {
@@ -234,11 +227,7 @@ describe('TicketsService', () => {
             companyId: company.id,
             type: TicketType.strikeOff,
           }),
-        ).rejects.toEqual(
-          new ConflictException(
-            'Cannot find user with role director to create a ticket',
-          ),
-        );
+        ).rejects.toEqual(new UserNotFoundError([UserRole.director]));
       });
 
       it('throws when multiple directors exist', async () => {
@@ -259,11 +248,7 @@ describe('TicketsService', () => {
             companyId: company.id,
             type: TicketType.strikeOff,
           }),
-        ).rejects.toEqual(
-          new ConflictException(
-            'Multiple users with role director. Cannot create a ticket',
-          ),
-        );
+        ).rejects.toEqual(new MultipleUsersError(UserRole.director));
       });
 
       it('resolves all other active tickets when strikeOff is created', async () => {
