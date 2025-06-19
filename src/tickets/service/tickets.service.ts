@@ -21,12 +21,23 @@ export interface TicketDto {
 interface TicketTypeHandler {
   category: TicketCategory;
   assigneeHandler: (companyId: number) => Promise<User>;
-  checkDuplicate: boolean;
   sideEffects: Array<(companyId: number) => Promise<void>>;
 }
 
 @Injectable()
 export class TicketsService {
+  private throwUserNotFoundError(roles: UserRole[]): never {
+    throw new ConflictException(
+      `Cannot find user with role ${roles.join(' or ')} to create a ticket`,
+    );
+  }
+
+  private throwMultipleUsersError(role: UserRole): never {
+    throw new ConflictException(
+      `Multiple users with role ${role}. Cannot create a ticket`,
+    );
+  }
+
   async findAll(): Promise<Ticket[]> {
     return await Ticket.findAll({ include: [Company, User] });
   }
@@ -37,21 +48,18 @@ export class TicketsService {
         category: TicketCategory.accounting,
         assigneeHandler: (companyId: number) =>
           this.assignManagementReportTicket(companyId),
-        checkDuplicate: false,
         sideEffects: [],
       },
       [TicketType.registrationAddressChange]: {
         category: TicketCategory.corporate,
         assigneeHandler: (companyId: number) =>
           this.assignRegistrationAddressChangeTicket(companyId),
-        checkDuplicate: true,
         sideEffects: [],
       },
       [TicketType.strikeOff]: {
         category: TicketCategory.management,
         assigneeHandler: (companyId: number) =>
           this.assignStrikeOffTicket(companyId),
-        checkDuplicate: false,
         sideEffects: [
           (companyId: number) => this.resolveAllActiveTickets(companyId),
         ],
@@ -66,16 +74,6 @@ export class TicketsService {
 
     if (!handler) {
       throw new ConflictException(`Unsupported ticket type: ${type}`);
-    }
-
-    if (handler.checkDuplicate) {
-      const existingTicket = await Ticket.findOne({
-        where: { companyId, type },
-      });
-
-      if (existingTicket) {
-        throw new ConflictException(`Company already has a ${type} ticket`);
-      }
     }
 
     const assignee = await handler.assigneeHandler(companyId);
@@ -112,9 +110,7 @@ export class TicketsService {
     });
 
     if (corporateSecretaries.length > 1) {
-      throw new ConflictException(
-        `Multiple users with role ${UserRole.corporateSecretary}. Cannot create a ticket`,
-      );
+      this.throwMultipleUsersError(UserRole.corporateSecretary);
     }
 
     if (corporateSecretaries.length === 1) {
@@ -128,15 +124,14 @@ export class TicketsService {
     });
 
     if (directors.length === 0) {
-      throw new ConflictException(
-        'Cannot find user with role corporateSecretary or director to create a ticket',
-      );
+      this.throwUserNotFoundError([
+        UserRole.corporateSecretary,
+        UserRole.director,
+      ]);
     }
 
     if (directors.length > 1) {
-      throw new ConflictException(
-        'Multiple users with role director. Cannot create a ticket',
-      );
+      this.throwMultipleUsersError(UserRole.director);
     }
 
     return directors[0];
@@ -149,9 +144,7 @@ export class TicketsService {
     });
 
     if (!assignees.length) {
-      throw new ConflictException(
-        `Cannot find user with role ${UserRole.accountant} to create a ticket`,
-      );
+      this.throwUserNotFoundError([UserRole.accountant]);
     }
 
     return assignees[0];
@@ -164,15 +157,11 @@ export class TicketsService {
     });
 
     if (directors.length === 0) {
-      throw new ConflictException(
-        'Cannot find user with role director to create a strikeOff ticket',
-      );
+      this.throwUserNotFoundError([UserRole.director]);
     }
 
     if (directors.length > 1) {
-      throw new ConflictException(
-        'Multiple users with role director. Cannot create a strikeOff ticket',
-      );
+      this.throwMultipleUsersError(UserRole.director);
     }
 
     return directors[0];
