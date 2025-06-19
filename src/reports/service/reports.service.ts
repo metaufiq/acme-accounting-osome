@@ -33,20 +33,34 @@ export class ReportsService {
   private loadAndProcessCsvData(): Transaction[] {
     const tmpDir = 'tmp';
     const currentDataStats = new Map<string, number>();
+    let cacheValid = this.cachedData !== null;
 
     // Check if we need to reload data
     const csvFiles = fs
       .readdirSync(tmpDir)
       .filter((file) => file.endsWith('.csv'));
 
+    // Check file count changed
+    if (cacheValid && csvFiles.length !== this.cachedData!.fileStats.size) {
+      cacheValid = false;
+    }
+
     for (const file of csvFiles) {
       const filePath = path.join(tmpDir, file);
       const stats = fs.statSync(filePath);
       currentDataStats.set(file, stats.mtimeMs);
+
+      // Check if this file was modified while building the stats
+      if (cacheValid) {
+        const cachedMtime = this.cachedData!.fileStats.get(file);
+        if (!cachedMtime || cachedMtime !== stats.mtimeMs) {
+          cacheValid = false;
+        }
+      }
     }
 
-    // Check if cache is valid
-    if (this.cachedData && this.isCacheValid(currentDataStats)) {
+    // Return cached data if still valid
+    if (this.cachedData && cacheValid) {
       return this.cachedData.transactions;
     }
 
@@ -78,21 +92,6 @@ export class ReportsService {
     };
 
     return transactions;
-  }
-
-  private isCacheValid(currentDataStats: Map<string, number>): boolean {
-    if (!this.cachedData) return false;
-
-    // Check if file count changed
-    if (currentDataStats.size !== this.cachedData.fileStats.size) return false;
-
-    // Check if any file was modified
-    for (const [filename, mtime] of currentDataStats) {
-      const cachedMtime = this.cachedData.fileStats.get(filename);
-      if (!cachedMtime || cachedMtime !== mtime) return false;
-    }
-
-    return true;
   }
 
   accounts(): void {
