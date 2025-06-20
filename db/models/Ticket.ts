@@ -7,6 +7,7 @@ import {
   PrimaryKey,
   AutoIncrement,
 } from 'sequelize-typescript';
+
 import { Company } from './Company';
 import { User } from './User';
 
@@ -18,6 +19,7 @@ export enum TicketStatus {
 export enum TicketType {
   managementReport = 'managementReport',
   registrationAddressChange = 'registrationAddressChange',
+  strikeOff = 'strikeOff',
 }
 
 export enum TicketCategory {

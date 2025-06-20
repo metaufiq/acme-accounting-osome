@@ -9,7 +9,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
-    "test": "jest",
+    "test": "jest --runInBand",
     "debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "migrate": "sequelize db:migrate",
     "migrate:create": "sequelize db:create",
@@ -23,6 +23,8 @@
     "@nestjs/core": "11.0.13",
     "@nestjs/platform-express": "11.0.13",
     "@nestjs/sequelize": "11.0.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.2",
     "pg": "8.14.1",
     "reflect-metadata": "0.2.2",
     "sequelize": "6.37.7",
@@ -75,6 +77,10 @@
     "testEnvironment": "node",
     "setupFilesAfterEnv": [
       "./tests/setupJest.ts"
-    ]
+    ],
+    "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/$1",
+      "^@db/(.*)$": "<rootDir>/../db/$1"
+    }
   }
 }

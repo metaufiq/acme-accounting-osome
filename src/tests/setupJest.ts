@@ -1,9 +1,10 @@
 import { Test } from '@nestjs/testing';
 import { DestroyOptions } from 'sequelize';
 import { Model, ModelCtor } from 'sequelize-typescript';
-import { Company } from '../../db/models/Company';
-import { Ticket } from '../../db/models/Ticket';
-import { User } from '../../db/models/User';
+
+import { Company } from '@db/models/Company';
+import { Ticket } from '@db/models/Ticket';
+import { User } from '@db/models/User';
 import { DbModule } from '../db.module';
 
 beforeEach(async () => {
