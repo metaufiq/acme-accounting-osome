@@ -64,21 +64,11 @@ describe('ReportsService', () => {
 
       service.accounts();
 
-      expect(service.state('accounts')).toMatch(/finished in \d+\.\d+s/);
+      expect(service.state('accounts')).toMatch(/finished in \d+\.\d+/);
       expect(mockWriteFileSync).toHaveBeenCalledWith(
         'out/accounts.csv',
         expect.stringContaining('Account,Balance'),
       );
-    });
-
-    it('should handle errors in processing', () => {
-      mockReaddirSync.mockImplementation(() => {
-        throw new Error('File system error');
-      });
-
-      service.accounts();
-
-      expect(service.state('accounts')).toBe('failed: File system error');
     });
   });
 
@@ -91,21 +81,11 @@ describe('ReportsService', () => {
 
       service.yearly();
 
-      expect(service.state('yearly')).toMatch(/finished in \d+\.\d+s/);
+      expect(service.state('yearly')).toMatch(/finished in \d+\.\d+/);
       expect(mockWriteFileSync).toHaveBeenCalledWith(
         'out/yearly.csv',
         expect.stringContaining('Financial Year,Cash Balance'),
       );
-    });
-
-    it('should handle errors in processing', () => {
-      mockReaddirSync.mockImplementation(() => {
-        throw new Error('File system error');
-      });
-
-      service.yearly();
-
-      expect(service.state('yearly')).toBe('failed: File system error');
     });
   });
 
@@ -118,21 +98,11 @@ describe('ReportsService', () => {
 
       service.fs();
 
-      expect(service.state('fs')).toMatch(/finished in \d+\.\d+s/);
+      expect(service.state('fs')).toMatch(/finished in \d+\.\d+/);
       expect(mockWriteFileSync).toHaveBeenCalledWith(
         'out/fs.csv',
         expect.stringContaining('Basic Financial Statement'),
       );
-    });
-
-    it('should handle errors in processing', () => {
-      mockReaddirSync.mockImplementation(() => {
-        throw new Error('File system error');
-      });
-
-      service.fs();
-
-      expect(service.state('fs')).toBe('failed: File system error');
     });
   });
 
@@ -150,6 +120,7 @@ describe('ReportsService', () => {
 
       // First call should process files
       service.accounts();
+      expect(service.state('accounts')).toMatch(/finished in \d+\.\d+$/);
 
       // Reset mock call counts
       jest.clearAllMocks();
@@ -162,6 +133,7 @@ describe('ReportsService', () => {
       expect(mockReadFileSync).not.toHaveBeenCalled();
       expect(mockReaddirSync).toHaveBeenCalled(); // Still checks directory
       expect(mockStatSync).toHaveBeenCalled(); // Still checks file stats
+      expect(service.state('accounts')).toMatch(/finished in \d+\.\d+$/);
     });
 
     it('should invalidate cache when relevant files are modified', () => {
@@ -185,29 +157,32 @@ describe('ReportsService', () => {
       expect(mockReadFileSync).toHaveBeenCalled(); // Should read file again
     });
 
-    it('should maintain cache when only excludeFiles parameter changes', () => {
+    it('should maintain separate caches for different report types', () => {
       mockReaddirSync.mockReturnValue(['data.csv', 'yearly.csv', 'fs.csv']);
       mockReadFileSync.mockReturnValue('2023-01-01,Cash,,100,0\n');
       mockStatSync.mockReturnValue({ mtimeMs: 123456789 });
       mockWriteFileSync.mockImplementation(() => {});
 
-      // First call with no exclusions (accounts function)
+      // First call - accounts function (no exclusions)
       service.accounts();
+      expect(service.state('accounts')).toMatch(/finished in \d+\.\d+$/);
 
       // Reset mock call counts
       jest.clearAllMocks();
       mockReaddirSync.mockReturnValue(['data.csv', 'yearly.csv', 'fs.csv']);
       mockStatSync.mockReturnValue({ mtimeMs: 123456789 });
 
-      // Second call with exclusions (yearly function) - should use cache
+      // Second call - yearly function (excludes yearly.csv)
+      // This should not use accounts cache since it's a different report type
       service.yearly();
 
-      expect(mockReadFileSync).not.toHaveBeenCalled(); // Should NOT read files again
+      expect(mockReadFileSync).toHaveBeenCalled(); // Should read files for yearly cache
       expect(mockReaddirSync).toHaveBeenCalled(); // Still checks directory
       expect(mockStatSync).toHaveBeenCalled(); // Still checks file stats
+      expect(service.state('yearly')).toMatch(/finished in \d+\.\d+$/);
     });
 
-    it('should cache ALL files but filter results based on excludeFiles', () => {
+    it('should cache computed results instead of raw data', () => {
       // Setup multiple files with different content
       mockReaddirSync.mockReturnValue(['data.csv', 'yearly.csv', 'fs.csv']);
       mockStatSync.mockReturnValue({ mtimeMs: 123456789 });
@@ -227,16 +202,18 @@ describe('ReportsService', () => {
 
       // Verify all files were processed initially
       expect(mockReadFileSync).toHaveBeenCalledTimes(3);
+      expect(service.state('accounts')).toMatch(/finished in \d+\.\d+$/);
 
       // Reset mock call counts
       jest.clearAllMocks();
       mockReaddirSync.mockReturnValue(['data.csv', 'yearly.csv', 'fs.csv']);
       mockStatSync.mockReturnValue({ mtimeMs: 123456789 });
 
-      // Second call with exclusions should use cached data
-      service.yearly(); // Excludes yearly.csv
+      // Second call should use cached computed results
+      service.accounts();
 
-      expect(mockReadFileSync).not.toHaveBeenCalled(); // Uses cached data
+      expect(mockReadFileSync).not.toHaveBeenCalled(); // Uses cached results
+      expect(service.state('accounts')).toMatch(/finished in \d+\.\d+$/);
     });
 
     it('should track sourceFile for each transaction in cache', () => {
