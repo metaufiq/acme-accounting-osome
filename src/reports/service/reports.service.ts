@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import fs from 'fs';
 import path from 'path';
 import { performance } from 'perf_hooks';
+import readline from 'readline';
 
 interface CacheEntry<T> {
   result: T;
@@ -112,65 +113,70 @@ export class ReportsService {
     };
   }
 
-  private getCsvFiles(excludeFiles: string[] = []): string[] {
+  private async getCsvFiles(excludeFiles: string[] = []): Promise<string[]> {
     const tmpDir = 'tmp';
-    return fs
-      .readdirSync(tmpDir)
-      .filter((file) => file.endsWith('.csv') && !excludeFiles.includes(file));
+    const files = await fs.promises.readdir(tmpDir);
+    return files.filter(
+      (file) => file.endsWith('.csv') && !excludeFiles.includes(file),
+    );
   }
 
-  private processData(
+  private async processData(
     lineProcessor: (line: ParsedLine) => void,
     excludeFiles?: string[],
-  ): void {
-    const csvFiles = this.getCsvFiles(excludeFiles);
+  ): Promise<void> {
+    const csvFiles = await this.getCsvFiles(excludeFiles);
     const tmpDir = 'tmp';
 
     for (const file of csvFiles) {
       const filePath = path.join(tmpDir, file);
-      const content = fs.readFileSync(filePath, 'utf-8');
-      const lines = content.trim().split('\n');
+      const fileStream = fs.createReadStream(filePath, { encoding: 'utf-8' });
+      const rl = readline.createInterface({
+        input: fileStream,
+        crlfDelay: Infinity,
+      });
 
-      for (const line of lines) {
-        const parsedLine = this.parseCsvLine(line);
-        lineProcessor(parsedLine);
+      for await (const line of rl) {
+        if (line.trim()) {
+          const parsedLine = this.parseCsvLine(line);
+          lineProcessor(parsedLine);
+        }
       }
     }
   }
 
-  private getCurrentFileStats(): Map<string, number> {
+  private async getCurrentFileStats(): Promise<Map<string, number>> {
     const tmpDir = 'tmp';
     const fileStats = new Map<string, number>();
-    const allCsvFiles = fs
-      .readdirSync(tmpDir)
-      .filter((file) => file.endsWith('.csv'));
+    const files = await fs.promises.readdir(tmpDir);
+    const allCsvFiles = files.filter((file) => file.endsWith('.csv'));
 
     for (const file of allCsvFiles) {
       const filePath = path.join(tmpDir, file);
-      const stats = fs.statSync(filePath);
+      const stats = await fs.promises.stat(filePath);
       fileStats.set(file, stats.mtimeMs);
     }
 
     return fileStats;
   }
 
-  accounts(): void {
+  async accounts(): Promise<void> {
     this.states.accounts = 'starting';
     const start = performance.now();
 
-    const currentFileStats = this.getCurrentFileStats();
+    const currentFileStats = await this.getCurrentFileStats();
     const cacheData = this.caches.accounts;
 
     // Check if we can use cached result
     if (cacheData?.result && this.isCacheValid(cacheData, currentFileStats)) {
-      this.generateAccountsOutput(cacheData.result, start);
+      await this.generateAccountsOutput(cacheData.result, start);
       return;
     }
 
     const accountBalances = new Map<string, number>();
 
     // Process CSV files directly
-    this.processData(({ account, debit, credit }) => {
+    await this.processData(({ account, debit, credit }) => {
       if (account) {
         const balance = accountBalances.get(account) || 0;
         accountBalances.set(account, balance + debit - credit);
@@ -183,15 +189,15 @@ export class ReportsService {
       fileStats: currentFileStats,
     };
 
-    this.generateAccountsOutput(accountBalances, start);
+    await this.generateAccountsOutput(accountBalances, start);
   }
 
-  yearly(): void {
+  async yearly(): Promise<void> {
     this.states.yearly = 'starting';
     const start = performance.now();
 
     const excludeFiles = ['yearly.csv'];
-    const currentFileStats = this.getCurrentFileStats();
+    const currentFileStats = await this.getCurrentFileStats();
     const cacheData = this.caches.yearly;
 
     // Check if we can use cached result
@@ -199,14 +205,14 @@ export class ReportsService {
       cacheData?.result &&
       this.isCacheValid(cacheData, currentFileStats, excludeFiles)
     ) {
-      this.generateYearlyOutput(cacheData.result, start);
+      await this.generateYearlyOutput(cacheData.result, start);
       return;
     }
 
     const cashByYear = new Map<number, number>();
 
     // Process only Cash transactions
-    this.processData(({ date, account, debit, credit }) => {
+    await this.processData(({ date, account, debit, credit }) => {
       if (account === 'Cash' && date) {
         const year = new Date(date).getFullYear();
         if (!isNaN(year)) {
@@ -221,22 +227,22 @@ export class ReportsService {
       fileStats: currentFileStats,
     };
 
-    this.generateYearlyOutput(cashByYear, start);
+    await this.generateYearlyOutput(cashByYear, start);
   }
 
-  fs(): void {
+  async fs(): Promise<void> {
     this.states.fs = 'starting';
     const start = performance.now();
 
     const excludeFiles = ['fs.csv'];
-    const currentFileStats = this.getCurrentFileStats();
+    const currentFileStats = await this.getCurrentFileStats();
     const cacheData = this.caches.fs;
     // Check if we can use cached result
     if (
       cacheData?.result &&
       this.isCacheValid(cacheData, currentFileStats, excludeFiles)
     ) {
-      this.generateFsOutput(cacheData?.result, start);
+      await this.generateFsOutput(cacheData?.result, start);
       return;
     }
 
@@ -256,7 +262,7 @@ export class ReportsService {
       balances.set(account, 0);
     }
 
-    this.processData(({ account, debit, credit }) => {
+    await this.processData(({ account, debit, credit }) => {
       if (relevantAccounts.has(account)) {
         const balance = balances.get(account) || 0;
         balances.set(account, balance + debit - credit);
@@ -268,87 +274,128 @@ export class ReportsService {
       fileStats: currentFileStats,
     };
 
-    this.generateFsOutput(balances, start);
+    await this.generateFsOutput(balances, start);
   }
 
-  private generateAccountsOutput(
+  private async generateAccountsOutput(
     accountBalances: AccountBalances,
     start: number,
-  ): void {
-    const output = ['Account,Balance'];
+  ): Promise<void> {
+    const writeStream = fs.createWriteStream('out/accounts.csv');
+    writeStream.write('Account,Balance\n');
+
     for (const [account, balance] of accountBalances) {
-      output.push(`${account},${balance.toFixed(2)}`);
+      writeStream.write(`${account},${balance.toFixed(2)}\n`);
     }
-    fs.writeFileSync('out/accounts.csv', output.join('\n'));
+
+    writeStream.end();
+    await new Promise<void>((resolve, reject) => {
+      writeStream.on('finish', () => resolve());
+      writeStream.on('error', reject);
+    });
+
     this.states.accounts = `finished in ${((performance.now() - start) / 1000).toFixed(2)}`;
   }
 
-  private generateYearlyOutput(cashByYear: CashByYear, start: number): void {
-    const output = ['Financial Year,Cash Balance'];
-    Array.from(cashByYear.entries())
-      .sort(([a], [b]) => a - b)
-      .forEach(([year, balance]) => {
-        output.push(`${year},${balance.toFixed(2)}`);
-      });
-    fs.writeFileSync('out/yearly.csv', output.join('\n'));
+  private async generateYearlyOutput(
+    cashByYear: CashByYear,
+    start: number,
+  ): Promise<void> {
+    const writeStream = fs.createWriteStream('out/yearly.csv');
+    writeStream.write('Financial Year,Cash Balance\n');
+
+    const sortedEntries = Array.from(cashByYear.entries()).sort(
+      ([a], [b]) => a - b,
+    );
+    for (const [year, balance] of sortedEntries) {
+      writeStream.write(`${year},${balance.toFixed(2)}\n`);
+    }
+
+    writeStream.end();
+    await new Promise<void>((resolve, reject) => {
+      writeStream.on('finish', () => resolve());
+      writeStream.on('error', reject);
+    });
+
     this.states.yearly = `finished in ${((performance.now() - start) / 1000).toFixed(2)}`;
   }
 
-  private generateFsOutput(balances: FSBalances, start: number): void {
-    const output: string[] = [];
-    output.push('Basic Financial Statement');
-    output.push('');
-    output.push('Income Statement');
+  private async generateFsOutput(
+    balances: FSBalances,
+    start: number,
+  ): Promise<void> {
+    const writeStream = fs.createWriteStream('out/fs.csv');
+
+    writeStream.write('Basic Financial Statement\n');
+    writeStream.write('\n');
+    writeStream.write('Income Statement\n');
+
     let totalRevenue = 0;
     let totalExpenses = 0;
+
     for (const account of this.fsCategories['Income Statement']['Revenues']) {
       const value = balances.get(account) || 0;
-      output.push(`${account},${value.toFixed(2)}`);
+      writeStream.write(`${account},${value.toFixed(2)}\n`);
       totalRevenue += value;
     }
+
     for (const account of this.fsCategories['Income Statement']['Expenses']) {
       const value = balances.get(account) || 0;
-      output.push(`${account},${value.toFixed(2)}`);
+      writeStream.write(`${account},${value.toFixed(2)}\n`);
       totalExpenses += value;
     }
-    output.push(`Net Income,${(totalRevenue - totalExpenses).toFixed(2)}`);
-    output.push('');
-    output.push('Balance Sheet');
+
+    writeStream.write(
+      `Net Income,${(totalRevenue - totalExpenses).toFixed(2)}\n`,
+    );
+    writeStream.write('\n');
+    writeStream.write('Balance Sheet\n');
+
     let totalAssets = 0;
     let totalLiabilities = 0;
     let totalEquity = 0;
-    output.push('Assets');
+
+    writeStream.write('Assets\n');
     for (const account of this.fsCategories['Balance Sheet']['Assets']) {
       const value = balances.get(account) || 0;
-      output.push(`${account},${value.toFixed(2)}`);
+      writeStream.write(`${account},${value.toFixed(2)}\n`);
       totalAssets += value;
     }
-    output.push(`Total Assets,${totalAssets.toFixed(2)}`);
-    output.push('');
-    output.push('Liabilities');
+    writeStream.write(`Total Assets,${totalAssets.toFixed(2)}\n`);
+    writeStream.write('\n');
+
+    writeStream.write('Liabilities\n');
     for (const account of this.fsCategories['Balance Sheet']['Liabilities']) {
       const value = balances.get(account) || 0;
-      output.push(`${account},${value.toFixed(2)}`);
+      writeStream.write(`${account},${value.toFixed(2)}\n`);
       totalLiabilities += value;
     }
-    output.push(`Total Liabilities,${totalLiabilities.toFixed(2)}`);
-    output.push('');
-    output.push('Equity');
+    writeStream.write(`Total Liabilities,${totalLiabilities.toFixed(2)}\n`);
+    writeStream.write('\n');
+
+    writeStream.write('Equity\n');
     for (const account of this.fsCategories['Balance Sheet']['Equity']) {
       const value = balances.get(account) || 0;
-      output.push(`${account},${value.toFixed(2)}`);
+      writeStream.write(`${account},${value.toFixed(2)}\n`);
       totalEquity += value;
     }
-    output.push(
-      `Retained Earnings (Net Income),${(totalRevenue - totalExpenses).toFixed(2)}`,
+
+    writeStream.write(
+      `Retained Earnings (Net Income),${(totalRevenue - totalExpenses).toFixed(2)}\n`,
     );
     totalEquity += totalRevenue - totalExpenses;
-    output.push(`Total Equity,${totalEquity.toFixed(2)}`);
-    output.push('');
-    output.push(
-      `Assets = Liabilities + Equity, ${totalAssets.toFixed(2)} = ${(totalLiabilities + totalEquity).toFixed(2)}`,
+    writeStream.write(`Total Equity,${totalEquity.toFixed(2)}\n`);
+    writeStream.write('\n');
+    writeStream.write(
+      `Assets = Liabilities + Equity, ${totalAssets.toFixed(2)} = ${(totalLiabilities + totalEquity).toFixed(2)}\n`,
     );
-    fs.writeFileSync('out/fs.csv', output.join('\n'));
+
+    writeStream.end();
+    await new Promise<void>((resolve, reject) => {
+      writeStream.on('finish', () => resolve());
+      writeStream.on('error', reject);
+    });
+
     this.states.fs = `finished in ${((performance.now() - start) / 1000).toFixed(2)}`;
   }
 }

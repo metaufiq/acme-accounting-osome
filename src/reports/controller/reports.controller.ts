@@ -20,9 +20,9 @@ export class ReportsController {
   generate(): { message: string } {
     setImmediate(() => {
       void Promise.allSettled([
-        Promise.resolve(this.reportsService.accounts()),
-        Promise.resolve(this.reportsService.yearly()),
-        Promise.resolve(this.reportsService.fs()),
+        this.reportsService.accounts(),
+        this.reportsService.yearly(),
+        this.reportsService.fs(),
       ]);
     });
     return { message: 'processing' };
