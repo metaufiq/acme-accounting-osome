@@ -121,22 +121,6 @@ describe('TicketsService', () => {
         ).rejects.toEqual(new MultipleUsersError(UserRole.corporateSecretary));
       });
 
-      it('if there is no secretary, throw', async () => {
-        const company = await Company.create({ name: 'test' });
-
-        await expect(
-          service.create({
-            companyId: company.id,
-            type: TicketType.registrationAddressChange,
-          }),
-        ).rejects.toEqual(
-          new UserNotFoundError([
-            UserRole.corporateSecretary,
-            UserRole.director,
-          ]),
-        );
-      });
-
       it('assigns to director when no corporate secretary exists', async () => {
         const company = await Company.create({ name: 'test' });
         const director = await User.create({
@@ -197,6 +181,22 @@ describe('TicketsService', () => {
         expect(ticket.category).toBe(TicketCategory.corporate);
         expect(ticket.assigneeId).toBe(corporateSecretary.id);
         expect(ticket.status).toBe(TicketStatus.open);
+      });
+
+      it('if there is no secretary or director, throw', async () => {
+        const company = await Company.create({ name: 'test' });
+
+        await expect(
+          service.create({
+            companyId: company.id,
+            type: TicketType.registrationAddressChange,
+          }),
+        ).rejects.toEqual(
+          new UserNotFoundError([
+            UserRole.corporateSecretary,
+            UserRole.director,
+          ]),
+        );
       });
     });
 
